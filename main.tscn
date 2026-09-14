@@ -1,0 +1,40 @@
+[gd_scene format=3 uid="uid://b8y24amwuwjsr"]
+
+[ext_resource type="Script" uid="uid://cse8piivkjd5j" path="res://main.tscn.gd" id="1_ig7tw"]
+[ext_resource type="Texture2D" uid="uid://dyjdb01eangoi" path="res://background_1152x648.png" id="2_0xm2m"]
+[ext_resource type="Texture2D" uid="uid://nkx8uukmkn0y" path="res://assets/npcBack-removebg-preview.png" id="3_h2yge"]
+[ext_resource type="Texture2D" uid="uid://kn6fodvc1h06" path="res://assets/frontPlayer-removebg-preview.png" id="4_1bvp3"]
+
+[node name="main" type="Node2D" unique_id=938298312]
+script = ExtResource("1_ig7tw")
+
+[node name="background" type="Sprite2D" parent="." unique_id=1102006124]
+z_index = -1
+position = Vector2(572, 330)
+texture = ExtResource("2_0xm2m")
+
+[node name="DebugLabel" type="Label" parent="." unique_id=1739916860]
+offset_right = 40.0
+offset_bottom = 23.0
+text = "UCS"
+
+[node name="UCSButton" type="Button" parent="." unique_id=2058429218]
+offset_right = 8.0
+offset_bottom = 8.0
+offset_transform_position = Vector2(900, 100)
+text = "UCS"
+
+[node name="AStarButton" type="Button" parent="." unique_id=1650081788]
+offset_right = 8.0
+offset_bottom = 8.0
+text = "A*"
+
+[node name="NPC" type="Sprite2D" parent="." unique_id=1948235171]
+position = Vector2(990, 558)
+scale = Vector2(0.2, 0.2)
+texture = ExtResource("3_h2yge")
+
+[node name="Player" type="Sprite2D" parent="." unique_id=1952461835]
+position = Vector2(162, 162)
+scale = Vector2(0.2, 0.2)
+texture = ExtResource("4_1bvp3")
