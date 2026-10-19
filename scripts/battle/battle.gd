@@ -336,7 +336,18 @@ class NpcTurn extends State:
 		await b.wait(0.3)
 		if b.battle_over:
 			return
+		var domains: Dictionary = NpcCSP.build_domains(b.sim)
+		var csp_info: Array[String] = []
+		csp_info.append("Variables: %d" % domains.size())
+		for unit_index in domains:
+			csp_info.append("NPC %d domain: %d" % [unit_index, domains[unit_index].size()])
 		var plan: Dictionary = b.csp.local_search(b.sim)
+		var local_stats: Dictionary = NpcCSP.last_local_search_stats
+		var local_info: Array[String] = []
+		if not local_stats.is_empty():
+			local_info.append("Initial score: %.1f" % local_stats["initial_score"])
+			local_info.append("Best score: %.1f" % local_stats["best_score"])
+			local_info.append("Iterations: %d" % local_stats["iterations"])
 		var allowed_actions: Array[BattleAction] = []
 		for unit_index in plan:
 			var action = plan[unit_index]
@@ -344,6 +355,8 @@ class NpcTurn extends State:
 				allowed_actions.append(action)
 		var result := b.ai.decide(b.sim, allowed_actions)
 		b.last_search = result
+		b.overlay.set_csp_info(csp_info)
+		b.overlay.set_local_info(local_info)
 		b.overlay.show_result(result, b.sim)
 		var score := 0.0
 		for entry in result.root_scores:

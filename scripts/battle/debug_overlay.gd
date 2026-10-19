@@ -14,6 +14,8 @@ var _total_nodes := 0
 var _total_time := 0.0
 var _decisions := 0
 var _history: Array[String] = []
+var _csp_info: Array[String] = []
+var _local_info: Array[String] = []
 
 
 func setup(battle_node: Battle) -> void:
@@ -155,6 +157,10 @@ func show_result(result: MinimaxAI.SearchResult, sim: BattleSim) -> void:
 
 func _render() -> void:
 	var text := "\n".join(_history)
+	if not _csp_info.is_empty():
+		text += "\n\n[b]CSP[/b]\n" + "\n".join(_csp_info)
+	if not _local_info.is_empty():
+		text += "\n\n[b]Local Search[/b]\n" + "\n".join(_local_info)
 	if _decisions > 0:
 		text += "\n[i]Totals: %d decisions, %d nodes, %.1f ms (avg %.0f nodes)[/i]" % [
 			_decisions, _total_nodes, _total_time, float(_total_nodes) / _decisions]
@@ -193,3 +199,11 @@ func _score_of(r: MinimaxAI.SearchResult) -> float:
 		if entry["action"] == r.action:
 			return entry["score"]
 	return 0.0
+	
+func set_csp_info(info: Array[String]) -> void:
+	_csp_info = info
+	_render()
+	
+func set_local_info(info: Array[String]) -> void:
+	_local_info = info
+	_render()
