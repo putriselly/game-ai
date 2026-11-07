@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b54ukjw1tv2h7"]
+
+[ext_resource type="Script" uid="uid://bs8krs8ltew8n" path="res://scripts/battle/uji_kb.gd" id="1_sy5k4"]
+
+[node name="Node" type="Node" unique_id=1896477862]
+script = ExtResource("1_sy5k4")
