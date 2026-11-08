@@ -19,6 +19,11 @@ const WIN_SCORE := 1000.0
 ## Each side starts with this many potions; a basic healing skill consumes one.
 const POTIONS_PER_SIDE := 3
 
+const ELEMENT_KB = preload("res://scripts/battle/element_kb.gd")
+
+const STRENGTH_MULTIPLIER := 2.0
+const WEAKNESS_MULTIPLIER := 0.5
+
 ## AUTO: a unit whose bar is full always fires the ultimate (branching <= 4).
 ## CHOICE: basic skill and ultimate are both offered (branching <= 8).
 enum UltimateMode { AUTO, CHOICE }
@@ -360,7 +365,13 @@ func apply_skill(user: UnitState, skill: SkillData, targets: Array[UnitState], h
 			continue
 		var damage := skill.power
 		if skill.power_if_target_burning > 0 and target.is_burning():
-			damage = skill.power_if_target_burning
+			damage = skill.power_if_target_burning	
+		# Menghitung multiplier berdasarkan elemen penyerang dan target
+		var status : Variant = ELEMENT_KB.get_element_status(user.data.element, target.data.element)
+		if status == ELEMENT_KB.STRENGTH:
+			damage = roundi(damage * STRENGTH_MULTIPLIER)
+		elif status == ELEMENT_KB.WEAKNESS:
+			damage = roundi(damage * WEAKNESS_MULTIPLIER)
 		if damage > 0:
 			if not hit:
 				events.append({"type": "miss", "unit": user.index, "target": target.index})

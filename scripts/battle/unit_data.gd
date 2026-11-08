@@ -6,6 +6,8 @@ extends Resource
 
 @export var id: String = ""
 @export var display_name: String = ""
+# Elemen yang dimiliki karakter
+var element: String = ""
 @export var max_hp: int = 30
 @export_dir var sprite_folder: String = ""
 @export var skills: Array[SkillData] = []

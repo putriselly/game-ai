@@ -13,6 +13,19 @@ const MONSTER := "res://assets/Actor/Monster/"
 
 const TM := SkillData.TargetMode
 
+# Pembagian elemen untuk setiap karakter
+const ELEMENT_BY_ID = {
+	"ninja": "Wind",
+	"flame": "Fire",
+	"knight": "Water",
+	"monk": "Water",
+
+	"evil_bamboo": "Wind",
+	"bear": "Electric",
+	"bomber": "Fire",
+	"evil_fire_mage": "Fire",
+	"evil_thunder_mage": "Electric"
+}
 
 static func get_unit(id: String) -> UnitData:
 	match id:
@@ -115,6 +128,8 @@ static func _unit(id: String, display_name: String, max_hp: int, folder: String,
 	var u := UnitData.new()
 	u.id = id
 	u.display_name = display_name
+	u.element = str(ELEMENT_BY_ID.get(id, ""))
+	print("Unit: ", u.display_name, " | Element: ", u.element)
 	u.max_hp = max_hp
 	u.sprite_folder = folder
 	u.skills = skills
