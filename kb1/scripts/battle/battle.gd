@@ -92,7 +92,7 @@ func apply_ai_config() -> void:
 	if sim:
 		sim.hit_chance = Game.ai_config["hit_chance"]
 		sim.ultimate_mode = Game.ai_config["ultimate_mode"]
-		sim.full_targeting = Game.ai_config["full_targeting"]
+		sim.full_targeting = true
 		sim.target_rule = Game.ai_config["target_rule"]
 
 
@@ -351,7 +351,24 @@ class NpcTurn extends State:
 		var allowed_actions: Array[BattleAction] = []
 		for unit_index in plan:
 			var action = plan[unit_index]
-			if action != null and b.csp.is_action_legal(b.sim, unit_index, action):
+			if action == null:
+				continue
+			if not b.csp.is_action_legal(b.sim, unit_index, action):
+				continue
+			# Untuk skill serangan satu target, berikan semua kemungkinan target kepada Minimax.
+			if action.skill.targets_enemies() and action.targets.size() == 1:
+				var actor: UnitState = b.sim.units[action.unit]
+				var targets: Array[int] = b.sim.candidate_targets(actor, action.skill)
+				for target_index in targets:
+					var target_action: BattleAction = BattleAction.make(
+						action.unit,
+						action.skill,
+						[target_index]
+					)
+					if b.csp.is_action_legal(b.sim, unit_index, target_action):
+						allowed_actions.append(target_action)
+			else:
+				# Skill area, healing, shield, dan aksi lainnya tetap dipertahankan.
 				allowed_actions.append(action)
 		var result := b.ai.decide(b.sim, allowed_actions)
 		b.last_search = result

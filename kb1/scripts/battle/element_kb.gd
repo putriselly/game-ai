@@ -12,6 +12,7 @@ const ELEMENTS = [
 # Kategori hubungan elemen
 const STRENGTH = "Strength"
 const WEAKNESS = "Weakness"
+const NEUTRAL = "Neutral"
 
 # Tabel relasi elemen
 # TRUE  = elemen penyerang tidak lemah terhadap target
@@ -64,15 +65,15 @@ static func get_relation(attacker_element: String, target_element: String) -> Va
 
 # Menentukan status elemen penyerang terhadap target
 static func get_element_status(attacker_element: String, target_element: String) -> Variant:
-	var relation = get_relation(attacker_element, target_element)
-
-	# Jika elemen tidak valid
-	if relation == null:
+	var attacker_relation = get_relation(attacker_element, target_element)
+	var target_relation = get_relation(target_element, attacker_element)
+	if attacker_relation == null or target_relation == null:
 		return null
-
-	# TRUE berarti Strength
-	if relation:
+	if not attacker_relation and not target_relation:
+		push_error("Conflicting element relationship: %s vs %s" % [attacker_element, target_element])
+		return null
+	if not attacker_relation:
+		return WEAKNESS
+	if not target_relation:
 		return STRENGTH
-
-	# FALSE berarti Weakness
-	return WEAKNESS
+	return NEUTRAL
