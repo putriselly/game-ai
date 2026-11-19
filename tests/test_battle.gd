@@ -16,6 +16,8 @@ func _run() -> void:
 	await _test_state_machine()
 	_test_sim_rules()
 	_test_turn_structure()
+	_test_csp()
+	_test_csp_assignment()
 	_test_search()
 	await _test_full_battle()
 	print("\n%s" % ("ALL TESTS PASSED" if failures == 0 else "%d FAILURE(S)" % failures))
@@ -384,3 +386,56 @@ func _test_full_battle() -> void:
 	print("      winner: %s" % ["player" if battle.victory else "npc/draw"])
 	battle.queue_free()
 	await get_tree().process_frame
+	
+func _test_csp() -> void:
+	print("[CSP]")
+	var s := _sim()
+	var domains: Dictionary = NpcCSP.build_domains(s)
+
+	check(
+		domains.size() == s.side_units(BattleSim.NPC).size(),
+		"domain dibuat untuk setiap NPC"
+	)
+
+	var domains_valid := true
+
+	for unit in s.side_units(BattleSim.NPC):
+		if not domains.has(unit.index):
+			domains_valid = false
+			continue
+
+		var options: Array = domains[unit.index]
+
+		if not options.has(null):
+			domains_valid = false
+
+		for action in options:
+			if action == null:
+				continue
+
+			if action.unit != unit.index:
+				domains_valid = false
+
+			if not NpcCSP.is_action_legal(s, unit.index, action):
+				domains_valid = false
+
+	check(
+		domains_valid,
+		"setiap domain memiliki null dan hanya action legal milik NPC tersebut"
+	)
+	
+
+func _test_csp_assignment() -> void:
+	print("[CSP assignment]")
+	var s := _sim()
+	var plan: Dictionary = NpcCSP.backtracking_search(s)
+
+	check(
+		not plan.is_empty(),
+		"backtracking menghasilkan assignment"
+	)
+
+	check(
+		NpcCSP.is_assignment_consistent(s, plan),
+		"assignment memenuhi constraint CSP"
+	)

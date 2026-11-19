@@ -45,7 +45,7 @@ var _weights: Dictionary
 var _result: SearchResult
 
 
-func decide(sim: BattleSim) -> SearchResult:
+func decide(sim: BattleSim, allowed_actions: Array[BattleAction] = []) -> SearchResult:
 	_weights = BattleEvaluator.personality(personality)
 	_result = SearchResult.new()
 	_result.algorithm = ALGORITHM_NAMES[algorithm]
@@ -54,18 +54,37 @@ func decide(sim: BattleSim) -> SearchResult:
 	_result.depth = search_depth
 	var start := Time.get_ticks_usec()
 
-	var actions := _order(sim, sim.legal_actions(side), true)
+	var legal_actions := sim.legal_actions(side)
+	var actions: Array[BattleAction] = []
+
+	if allowed_actions.is_empty():
+		actions = legal_actions
+	else:
+		for action in allowed_actions:
+			for legal_action in legal_actions:
+				if action.same_as(legal_action):
+					actions.append(legal_action)
+					break
+
+		if actions.is_empty():
+			actions = legal_actions
+
+	actions = _order(sim, actions, true)
 	_result.nodes += 1
+
 	var best_action: BattleAction = actions[0]
 	var best_value := -INF
 	var alpha := -INF
+
 	for action in actions:
 		var value := _action_value(sim, action, search_depth - 1, alpha, INF)
 		var bound := algorithm == Algorithm.ALPHABETA and value <= alpha and best_value > -INF
 		_result.root_scores.append({"action": action, "score": value, "bound": bound})
+
 		if value > best_value:
 			best_value = value
 			best_action = action
+
 		if algorithm == Algorithm.ALPHABETA:
 			alpha = maxf(alpha, best_value)
 

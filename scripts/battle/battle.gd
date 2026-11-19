@@ -22,6 +22,7 @@ var units: Array[BattleUnit] = []   # index-aligned with sim.units
 var ui: BattleUI
 var overlay: DebugOverlay
 var ai: MinimaxAI
+var csp := NpcCSP.new()
 var state_machine: StateMachine
 var round_number := 0
 var battle_over := false
@@ -91,7 +92,7 @@ func apply_ai_config() -> void:
 	if sim:
 		sim.hit_chance = Game.ai_config["hit_chance"]
 		sim.ultimate_mode = Game.ai_config["ultimate_mode"]
-		sim.full_targeting = Game.ai_config["full_targeting"]
+		sim.full_targeting = true
 		sim.target_rule = Game.ai_config["target_rule"]
 
 
@@ -335,8 +336,44 @@ class NpcTurn extends State:
 		await b.wait(0.3)
 		if b.battle_over:
 			return
-		var result := b.ai.decide(b.sim)
+		var domains: Dictionary = NpcCSP.build_domains(b.sim)
+		var csp_info: Array[String] = []
+		csp_info.append("Variables: %d" % domains.size())
+		for unit_index in domains:
+			csp_info.append("NPC %d domain: %d" % [unit_index, domains[unit_index].size()])
+		var plan: Dictionary = b.csp.local_search(b.sim)
+		var local_stats: Dictionary = NpcCSP.last_local_search_stats
+		var local_info: Array[String] = []
+		if not local_stats.is_empty():
+			local_info.append("Initial score: %.1f" % local_stats["initial_score"])
+			local_info.append("Best score: %.1f" % local_stats["best_score"])
+			local_info.append("Iterations: %d" % local_stats["iterations"])
+		var allowed_actions: Array[BattleAction] = []
+		for unit_index in plan:
+			var action = plan[unit_index]
+			if action == null:
+				continue
+			if not b.csp.is_action_legal(b.sim, unit_index, action):
+				continue
+			# Untuk skill serangan satu target, berikan semua kemungkinan target kepada Minimax.
+			if action.skill.targets_enemies() and action.targets.size() == 1:
+				var actor: UnitState = b.sim.units[action.unit]
+				var targets: Array[int] = b.sim.candidate_targets(actor, action.skill)
+				for target_index in targets:
+					var target_action: BattleAction = BattleAction.make(
+						action.unit,
+						action.skill,
+						[target_index]
+					)
+					if b.csp.is_action_legal(b.sim, unit_index, target_action):
+						allowed_actions.append(target_action)
+			else:
+				# Skill area, healing, shield, dan aksi lainnya tetap dipertahankan.
+				allowed_actions.append(action)
+		var result := b.ai.decide(b.sim, allowed_actions)
 		b.last_search = result
+		b.overlay.set_csp_info(csp_info)
+		b.overlay.set_local_info(local_info)
 		b.overlay.show_result(result, b.sim)
 		var score := 0.0
 		for entry in result.root_scores:

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://64uvoab6aph1"]
+
+[ext_resource type="Script" uid="uid://bnyediwoln2cl" path="res://scripts/battle/uji_damage.gd" id="1_c7fco"]
+
+[node name="Node" type="Node" unique_id=1355548643]
+script = ExtResource("1_c7fco")

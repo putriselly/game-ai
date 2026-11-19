@@ -5,6 +5,8 @@ extends RefCounted
 # Setiap NPC boleh tidak bertindak, sehingga setiap domain
 # selalu memiliki pilihan null.
 
+static var last_local_search_stats: Dictionary = {}
+
 static func build_domains(sim: BattleSim) -> Dictionary:
 	var domains: Dictionary = {}
 
@@ -509,3 +511,170 @@ static func _copy_domains(domains: Dictionary) -> Dictionary:
 		copied[variable_index] = domains[variable_index].duplicate()
 
 	return copied
+
+
+# Menghitung pelanggaran constraint penggunaan potion.
+static func count_violations(
+	sim: BattleSim,
+	assignment: Dictionary
+) -> int:
+	var potion_used := 0
+	for unit_index in assignment:
+		var action = assignment[unit_index]
+		if action == null:
+			continue
+		if BattleSim.consumes_potion(action.skill):
+			potion_used += 1
+	return maxi(
+		0,
+		potion_used - sim.potions[BattleSim.NPC]
+	)
+	
+	
+
+static func build_neighbor_plan(sim: BattleSim, assignment: Dictionary) -> Dictionary:
+	var neighbor: Dictionary = assignment.duplicate()
+	var domains: Dictionary = build_domains(sim)
+	var units: Array = neighbor.keys()
+
+	if units.is_empty():
+		return {}
+
+	# Cari NPC yang masih memiliki alternatif aksi berbeda.
+	var candidates_by_unit: Dictionary = {}
+
+	for unit_index in units:
+		var current_action = neighbor[unit_index]
+		var alternatives: Array = []
+
+		for action in domains.get(unit_index, []):
+			if action == null:
+				if current_action != null:
+					alternatives.append(action)
+			elif current_action == null or not action.same_as(current_action):
+				alternatives.append(action)
+
+		if not alternatives.is_empty():
+			candidates_by_unit[unit_index] = alternatives
+
+	# Jika tidak ada alternatif, pencarian tidak bisa menghasilkan tetangga baru.
+	if candidates_by_unit.is_empty():
+		return {}
+
+	# Pilih NPC yang benar-benar bisa mengubah aksinya.
+	var available_units: Array = candidates_by_unit.keys()
+	var unit_index = available_units[randi() % available_units.size()]
+	var alternatives: Array = candidates_by_unit[unit_index]
+
+	neighbor[unit_index] = alternatives[randi() % alternatives.size()]
+
+	return neighbor
+
+
+static func build_initial_plan(sim: BattleSim) -> Dictionary:
+	return backtracking_search(sim, true, true)
+
+
+static func evaluate_plan(sim: BattleSim, assignment: Dictionary) -> float:
+	if not is_assignment_consistent(sim, assignment):
+		return -INF
+
+	var total_score: float = 0.0
+	var action_count := 0
+
+	for unit_index in assignment:
+		var action = assignment[unit_index]
+
+		if action == null:
+			continue
+
+		if not is_action_legal(sim, unit_index, action):
+			continue
+
+		var sim_copy: BattleSim = sim.clone()
+		sim_copy.side_to_move = BattleSim.NPC
+		sim_copy.apply(action)
+
+		var score: float = BattleEvaluator.evaluate(
+			sim_copy,
+			BattleSim.NPC,
+			"tactical",
+			{}
+		)
+
+		total_score += score
+		action_count += 1
+
+	if action_count == 0:
+		return BattleEvaluator.evaluate(
+			sim,
+			BattleSim.NPC,
+			"tactical",
+			{}
+		)
+
+	return total_score / float(action_count)
+
+
+
+static func local_search(
+	sim: BattleSim,
+	max_iterations: int = 100
+) -> Dictionary:
+	# Reset statistik pencarian.
+	last_local_search_stats = {}
+
+	var current_plan: Dictionary = build_initial_plan(sim)
+
+	if current_plan.is_empty():
+		return {}
+
+	var current_score: float = evaluate_plan(sim, current_plan)
+	var initial_score: float = current_score
+	var best_plan: Dictionary = current_plan.duplicate(true)
+	var best_score: float = current_score
+
+	var iterations_done := 0
+	var iterations_without_improvement := 0
+	var patience := 20
+
+	for i in range(max_iterations):
+		iterations_done += 1
+
+		var neighbor: Dictionary = build_neighbor_plan(sim, current_plan)
+
+		# Tidak ada tetangga baru yang bisa dicoba.
+		if neighbor.is_empty():
+			break
+
+		if not is_assignment_consistent(sim, neighbor):
+			iterations_without_improvement += 1
+		else:
+			var neighbor_score: float = evaluate_plan(sim, neighbor)
+
+			# Terima tetangga hanya jika skornya meningkat.
+			if neighbor_score > current_score:
+				current_plan = neighbor
+				current_score = neighbor_score
+				iterations_without_improvement = 0
+			else:
+				iterations_without_improvement += 1
+
+			# Simpan rencana terbaik yang pernah ditemukan.
+			if current_score > best_score:
+				best_plan = current_plan.duplicate(true)
+				best_score = current_score
+
+		# Berhenti jika 20 iterasi berturut-turut tidak meningkatkan skor.
+		if iterations_without_improvement >= patience:
+			break
+
+	last_local_search_stats = {
+		"initial_score": initial_score,
+		"best_score": best_score,
+		"iterations": iterations_done
+	}
+
+	return best_plan
+
+	

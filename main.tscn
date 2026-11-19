@@ -1,7 +1,7 @@
-[gd_scene load_steps=5 format=4 uid="uid://b8y24amwuwjsr"]
+[gd_scene format=4 uid="uid://b8y24amwuwjsr"]
 
 [ext_resource type="TileSet" uid="uid://cs2lm8rx4cmo3" path="res://tilemap.tres" id="1_1bvp3"]
-[ext_resource type="Script" path="res://scripts/world/world.gd" id="2_world"]
+[ext_resource type="Script" uid="uid://pl6lq8nob2ll" path="res://scripts/world/world.gd" id="2_world"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="3_player"]
 [ext_resource type="PackedScene" path="res://scenes/world_enemy.tscn" id="4_enemy"]
 
@@ -23,22 +23,19 @@ position = Vector2(88, 64)
 
 [node name="BambooPatrol" parent="Enemies" unique_id=1500000002 instance=ExtResource("4_enemy")]
 position = Vector2(296, 136)
-display_name = "Evil Bamboo"
-sprite_folder = "res://assets/Actor/Monster/Bamboo"
 encounter_id = "bamboo_patrol"
-enemy_party = Array[String](["evil_bamboo", "bear"])
 
 [node name="BomberSquad" parent="Enemies" unique_id=1500000003 instance=ExtResource("4_enemy")]
 position = Vector2(456, 232)
-display_name = "Bomber"
-sprite_folder = "res://assets/Actor/Character/NinjaBomb"
 encounter_id = "bomber_squad"
 enemy_party = Array[String](["bomber", "evil_fire_mage", "evil_thunder_mage"])
+display_name = "Bomber"
+sprite_folder = "res://assets/Actor/Character/NinjaBomb"
 
 [node name="BearDen" parent="Enemies" unique_id=1500000004 instance=ExtResource("4_enemy")]
 position = Vector2(168, 296)
+encounter_id = "bear_den"
+enemy_party = Array[String](["bear", "evil_bamboo", "evil_bamboo", "bomber"])
 display_name = "Bear"
 sprite_folder = "res://assets/Actor/Monster/Bear"
 speed = 40.0
-encounter_id = "bear_den"
-enemy_party = Array[String](["bear", "evil_bamboo", "evil_bamboo", "bomber"])
