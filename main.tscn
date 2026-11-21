@@ -39,3 +39,13 @@ enemy_party = Array[String](["bear", "evil_bamboo", "evil_bamboo", "bomber"])
 display_name = "Bear"
 sprite_folder = "res://assets/Actor/Monster/Bear"
 speed = 40.0
+
+[node name="BambooKing" parent="Enemies" unique_id=1500000005 instance=ExtResource("4_enemy")]
+position = Vector2(424, 328)
+encounter_id = "bamboo_king"
+enemy_party = Array[String](["giant_bamboo"])
+requires_defeated = Array[String](["bamboo_patrol", "bomber_squad", "bear_den"])
+detect_radius = 96.0
+display_name = "Giant Bamboo"
+sprite_folder = "res://assets/Actor/Boss/GiantBamboo"
+speed = 32.0

@@ -15,11 +15,14 @@ func _run() -> void:
 	await _test_pathfinder()
 	await _test_state_machine()
 	_test_sim_rules()
+	_test_boss_rules()
+	_test_plan_model()
 	_test_turn_structure()
 	_test_csp()
 	_test_csp_assignment()
 	_test_search()
 	await _test_full_battle()
+	await _test_boss_battle()
 	print("\n%s" % ("ALL TESTS PASSED" if failures == 0 else "%d FAILURE(S)" % failures))
 	get_tree().quit(0 if failures == 0 else 1)
 
@@ -76,7 +79,7 @@ func _test_state_machine() -> void:
 ## Fixture with fixed HP values so the rule checks below stay readable no
 ## matter how the roster is balanced.
 const FIXTURE_HP := {"ninja": 40, "flame": 35, "knight": 60, "monk": 35,
-	"evil_bamboo": 30, "bear": 45, "bomber": 30, "evil_fire_mage": 35}
+	"evil_bamboo": 30, "bear": 45, "bomber": 30, "evil_fire_mage": 35, "giant_bamboo": 150}
 
 
 func _sim() -> BattleSim:
@@ -120,25 +123,26 @@ func _test_sim_rules() -> void:
 	check(ninja.ult == 25, "hitting charges the ultimate bar (%d)" % ninja.ult)
 	ninja.ult = 100
 	s.apply_skill(ninja, _ult(ninja), s.alive_units(BattleSim.NPC))
-	check(bamboo.hp == 15 and bear.hp == 40 and bomber.hp == 25 and mage.hp == 30, "Shuriken Storm hits every enemy for 5")
+	check(bamboo.hp == 15 and bear.hp == 35 and bomber.hp == 27 and mage.hp == 32,
+		"Shuriken Storm hits every enemy for 5 with element multiplier: Wind x1 vs Bamboo (5), x2 vs Electric Bear (10), x0.5 vs Fire Bomber/Mage (2.5 -> 3)")
 	check(ninja.ult == 0, "ultimate empties the bar")
 
 	s.apply_skill(flame, _basic(flame), [bear])
-	check(bear.hp == 35 and bear.burn == 2, "Scorch deals 5 and burns 2 turns")
+	check(bear.hp == 30 and bear.burn == 2, "Scorch deals 5 (Fire vs Electric is neutral, x1) and burns 2 turns")
 	s.apply_skill(flame, _basic(flame), [bear])
 	check(bear.burn == 2, "burn does not stack (still 2 turns)")
 	s.apply_skill(flame, _ult(flame), [bear])
-	check(bear.hp == 15, "Explode deals 15 to a burning target (hp %d)" % bear.hp)
+	check(bear.hp == 10, "Explode deals 15 to a burning target (Fire vs Electric x1, hp %d)" % bear.hp)
 	s.apply_skill(flame, _ult(flame), [bomber])
-	check(bomber.hp == 18, "Explode deals 7 to a non-burning target (hp %d)" % bomber.hp)
+	check(bomber.hp == 20, "Explode deals 7 to a non-burning target (Fire vs Fire x1, hp %d)" % bomber.hp)
 	var tick := s.begin_turn(BattleSim.NPC)
-	check(bear.hp == 13 and bear.burn == 1 and tick.size() == 1, "burn ticks at the start of the side's turn and counts down")
+	check(bear.hp == 8 and bear.burn == 1 and tick.size() == 1, "burn ticks 2 at the start of the side's turn (no element multiplier) and counts down")
 
 	s.apply_skill(knight, _basic(knight), [mage])
-	check(mage.hp == 27 and mage.stun == 0, "Bump at full HP: 3 damage, no stun")
+	check(mage.hp == 26 and mage.stun == 0, "Bump at full HP: 3 x2 (Water vs Fire) = 6 damage, no stun")
 	knight.hp = 20
 	s.apply_skill(knight, _basic(knight), [mage])
-	check(mage.hp == 24 and mage.stun == 1, "Bump under 50% HP also stuns")
+	check(mage.hp == 20 and mage.stun == 1, "Bump under 50% HP also stuns (another 6 damage)")
 	var npc_actions := s.legal_actions(BattleSim.NPC)
 	var mage_can_act := npc_actions.any(func(a): return a.unit == mage.index)
 	check(not mage_can_act, "a stunned unit cannot be chosen to act")
@@ -165,11 +169,12 @@ func _test_sim_rules() -> void:
 	check(knight.hp == 35 and flame.hp == 35 and ninja.hp == 40, "Blessing heals all allies by 10, capped at max HP")
 
 	s.apply_skill(bear, _ult(bear), [monk])
-	check(monk.hp == 32 and monk.stun == 1, "Body Slam: 3 damage + stun 1")
+	check(monk.hp == 29 and monk.stun == 1, "Body Slam: 3 x2 (Electric vs Water) = 6 damage + stun 1")
 	s.apply_skill(bomber, _basic(bomber), s.alive_units(BattleSim.PLAYER))
-	check(ninja.hp == 37 and knight.hp == 32 and monk.hp == 29, "Bomb hits every ally for 3")
+	check(ninja.hp == 34 and flame.hp == 32 and knight.hp == 33 and monk.hp == 27,
+		"Bomb hits every ally for 3 with element multiplier: Fire x2 vs Wind Ninja (6), x1 vs Fire Flame (3), x0.5 vs Water Knight/Monk (1.5 -> 2)")
 	s.apply_skill(mage, _ult(mage), [knight])
-	check(knight.hp == 17 and knight.burn == 3, "Light Up: 15 damage + burn 3 turns")
+	check(knight.hp == 25 and knight.burn == 3, "Light Up: 15 x0.5 (Fire vs Water) = 7.5 -> 8 damage + burn 3 turns")
 
 	var hp_before := ninja.hp
 	var ult_before := bamboo.ult
@@ -179,6 +184,155 @@ func _test_sim_rules() -> void:
 	s.apply_skill(ninja, _basic(ninja), [bamboo])
 	var death := s.apply_skill(ninja, _basic(ninja), [bamboo])
 	check(not bamboo.is_alive() and bamboo.hp == 0 and death.any(func(e): return e["type"] == "death"), "unit dies at 0 HP")
+
+
+## Boss fixture: Giant Bamboo alone against the party, fixture HP for heroes.
+func _boss_sim() -> BattleSim:
+	var s := BattleSim.create(["ninja", "flame", "knight", "monk"], ["giant_bamboo"])
+	for u in s.units:
+		if FIXTURE_HP.has(u.data.id):
+			u.data.max_hp = FIXTURE_HP[u.data.id]
+			u.hp = u.data.max_hp
+	return s
+
+
+func _skill_of(u: UnitState, skill_id: String) -> SkillData:
+	for sk in u.data.skills:
+		if sk.id == skill_id:
+			return sk
+	return null
+
+
+func _usable_ids(s: BattleSim, u: UnitState) -> Array:
+	var ids := []
+	for sk in s.usable_skills(u):
+		ids.append(sk.id)
+	return ids
+
+
+func _has_event(events: Array[Dictionary], type: String, flag: String = "") -> bool:
+	for e in events:
+		if e["type"] == type and (flag == "" or e.get("flag", "") == flag):
+			return true
+	return false
+
+
+## Skill PRECONDITIONS / EFFECTS (flags) on the Giant Bamboo boss.
+func _test_boss_rules() -> void:
+	print("[Boss rules]")
+	var s := _boss_sim()
+	var boss := _u(s, "giant_bamboo")
+	var ninja := _u(s, "ninja")
+	var flame := _u(s, "flame")
+	var monk := _u(s, "monk")
+	check(boss != null and boss.data.is_boss and boss.data.skills.size() == 7 and boss.data.element == "Wind",
+		"Giant Bamboo exists: boss flag, 7 skills, Wind element")
+	var spear := _skill_of(boss, "bamboo_spear")
+	check(spear.consumes.size() == 1 and spear.consumes[0] == "enraged" and spear.consumes.is_typed() and spear.power_if_user_enraged == 24,
+		"roster string lists became typed Array[String] (consumes %s)" % str(spear.consumes))
+
+	check(_usable_ids(s, boss) == ["root_slam", "sap_surge", "bamboo_spear", "harden_bark"],
+		"at full HP only skills without unmet preconditions are offered: %s" % str(_usable_ids(s, boss)))
+	check(s.legal_actions(BattleSim.NPC).size() == 4, "boss alone: 4 legal actions under rule targeting (%d)" % s.legal_actions(BattleSim.NPC).size())
+
+	# Sap Surge grants "enraged" and cannot be stacked.
+	var events := s.apply_skill(boss, _skill_of(boss, "sap_surge"), [boss])
+	check(boss.has_flag("enraged") and _has_event(events, "status", "enraged"), "Sap Surge grants the enraged flag (status event)")
+	check(not _usable_ids(s, boss).has("sap_surge"), "Sap Surge is forbidden while already enraged")
+	check(boss.ult == 25, "a self-buff still charges the ultimate bar (%d)" % boss.ult)
+
+	# Bamboo Spear: 20 while enraged, spends the rage, 10 afterwards.
+	events = s.apply_skill(boss, spear, [monk])
+	check(monk.hp == 11, "enraged Bamboo Spear deals 24 to Monk (Water, neutral vs Wind): hp %d" % monk.hp)
+	check(not boss.has_flag("enraged") and _has_event(events, "status_lost", "enraged"), "Bamboo Spear consumes the rage (status_lost event)")
+	var knight := _u(s, "knight")
+	s.apply_skill(boss, spear, [knight])
+	check(knight.hp == 50, "calm Bamboo Spear deals 10 (knight hp %d)" % knight.hp)
+	s.apply_skill(boss, spear, [flame])
+	check(flame.hp == 30, "Wind is weak to Fire: Bamboo Spear deals 10 x0.5 = 5 to Flame (hp %d)" % flame.hp)
+	check(s.base_damage(boss, spear, ninja) == 10, "base_damage reports the calm value (%d)" % s.base_damage(boss, spear, ninja))
+	boss.set_flag("enraged")
+	check(s.base_damage(boss, spear, ninja) == 24, "base_damage reports the enraged value (%d)" % s.base_damage(boss, spear, ninja))
+
+	# Harden Bark only while unshielded. (Reset the bar: in AUTO mode a full
+	# ultimate would be the only skill offered.)
+	boss.ult = 0
+	var harden := _skill_of(boss, "harden_bark")
+	s.apply_skill(boss, harden, [boss])
+	check(boss.shield == 15, "Harden Bark gives 15 shield (%d)" % boss.shield)
+	check(not _usable_ids(s, boss).has("harden_bark"), "Harden Bark is forbidden while shielded (derived flag)")
+	boss.shield = 0
+	check(_usable_ids(s, boss).has("harden_bark"), "Harden Bark returns once the shield is gone")
+
+	# Thorn Storm needs enraged AND phase 2; phase 2 is set at the boss's turn start under 50% HP.
+	check(boss.has_flag("enraged") and not _usable_ids(s, boss).has("thorn_storm"), "Thorn Storm is locked before phase 2 even while enraged")
+	check(not _usable_ids(s, boss).has("regrow"), "Regrow is locked above 50% HP")
+	boss.hp = 60
+	events = s.begin_turn(BattleSim.NPC)
+	check(boss.has_flag("phase2") and _has_event(events, "status", "phase2"), "begin_turn puts a boss under 50%% HP into phase 2 (hp %d/%d)" % [boss.hp, boss.data.max_hp])
+	check(_usable_ids(s, boss).has("thorn_storm"), "Thorn Storm is offered once enraged and in phase 2")
+	var ninja_hp := ninja.hp
+	events = s.apply_skill(boss, _skill_of(boss, "thorn_storm"), s.alive_units(BattleSim.PLAYER))
+	check(ninja.hp == ninja_hp - 6 and flame.hp == 27 and ninja.burn == 2 and monk.burn == 2,
+		"Thorn Storm: 6 damage (3 to Flame) and burn 2 on every hero (ninja %d, flame %d)" % [ninja.hp, flame.hp])
+	check(not boss.has_flag("enraged"), "Thorn Storm consumes the rage")
+	check(not _usable_ids(s, boss).has("thorn_storm"), "Thorn Storm is locked again without rage")
+
+	# Regrow: below 50% HP, once, drinks a potion.
+	boss.ult = 0
+	var regrow := _skill_of(boss, "regrow")
+	check(_usable_ids(s, boss).has("regrow"), "Regrow is offered below 50% HP")
+	events = s.apply_skill(boss, regrow, [boss])
+	check(boss.hp == 85 and s.potions[BattleSim.NPC] == 2 and _has_event(events, "potion"), "Regrow heals 25 and uses a potion (hp %d, potions %d)" % [boss.hp, s.potions[BattleSim.NPC]])
+	check(boss.has_flag(regrow.used_flag()) and not _usable_ids(s, boss).has("regrow"), "Regrow is once per battle")
+	boss.hp = 60
+	check(not _usable_ids(s, boss).has("regrow"), "Regrow stays locked after use even below 50% HP")
+
+	# Potion gate lives in legal_actions, not in skill_available.
+	var s2 := _boss_sim()
+	var boss2 := _u(s2, "giant_bamboo")
+	boss2.hp = 60
+	s2.potions[BattleSim.NPC] = 0
+	var legal_ids := []
+	for a in s2.legal_actions(BattleSim.NPC):
+		legal_ids.append(a.skill.id)
+	check(s2.skill_available(boss2, _skill_of(boss2, "regrow")) and not legal_ids.has("regrow"), "without potions Regrow is available but not legal")
+
+	# Flags survive cloning and stay independent; describe shows them.
+	var c := s.clone()
+	var cboss := _u(c, "giant_bamboo")
+	check(cboss.has_flag("phase2") and cboss.has_flag(regrow.used_flag()), "clone copies the flags")
+	cboss.clear_flag("phase2")
+	check(boss.has_flag("phase2"), "clone flags are independent of the original")
+	check(s.describe().contains("phase2"), "describe() lists stored flags")
+	check(s.threat_of(boss) > 0.0, "threat model handles the boss (%.1f)" % s.threat_of(boss))
+
+	# The existing search plays a whole boss fight without tripping over the
+	# new skills (self-targets, locked skills, flags in clones).
+	var fight := _boss_sim()
+	var npc := _ai(MinimaxAI.Algorithm.ALPHABETA, 2)
+	var player := _ai(MinimaxAI.Algorithm.ALPHABETA, 2)
+	player.side = BattleSim.PLAYER
+	var used := {}
+	while not fight.is_terminal():
+		var r := (npc if fight.side_to_move == BattleSim.NPC else player).decide(fight)
+		if fight.side_to_move == BattleSim.NPC and not r.action.is_pass():
+			used[r.action.skill.id] = true
+		fight.apply(r.action, 1)
+	check(fight.is_terminal() and fight.turn <= fight.max_turns, "minimax plays a full boss fight to the end (%d turns, winner %d)" % [fight.turn, fight.winner()])
+	check(used.has("sap_surge") or used.has("harden_bark"), "the boss used a status skill during the fight: %s" % str(used.keys()))
+
+
+## Tahap 4 planning model tests live in tests/test_planning.gd.
+func _test_plan_model() -> void:
+	var script = load("res://tests/test_planning.gd")
+	var planning = script.new() if script != null and script.can_instantiate() else null
+	if planning == null:
+		failures += 1
+		print("  FAIL - tests/test_planning.gd failed to load (parse error?)")
+		return
+	planning.run()
+	failures += planning.failures
 
 
 func _test_turn_structure() -> void:
@@ -352,12 +506,42 @@ func _test_search() -> void:
 	check(mid.describe() == before, "search never mutates the real state")
 
 
-## Plays a whole fight through the real scene: the player side is an autopilot
-## that clicks the first hero / skill / target, the NPC is the minimax AI.
+## Regular encounter: CSP + local search + minimax drive the NPC side.
 func _test_full_battle() -> void:
 	print("[Full battle autopilot]")
+	var battle := await _autopilot_battle(["evil_bamboo", "bear"])
+	check(battle.battle_over, "battle reaches an end state (turns: %d)" % battle.sim.turn)
+	check(battle.state_machine.is_in(&"Finished"), "state machine ends in Finished")
+	check(battle.last_search != null and battle.last_search.root_scores.size() > 0, "NPC decisions were recorded for the overlay")
+	print("      winner: %s" % ["player" if battle.victory else "npc/draw"])
+	battle.queue_free()
+	await get_tree().process_frame
+
+
+## Tahap 4: the Giant Bamboo fights through the real scene with the planner brain.
+func _test_boss_battle() -> void:
+	print("[Boss battle autopilot (planner)]")
+	Game.ai_config["boss_brain"] = BossBrain.Mode.PLANNER
+	var battle := await _autopilot_battle(["giant_bamboo"])
+	check(battle.battle_over and battle.state_machine.is_in(&"Finished"), "boss battle reaches an end state (turns: %d)" % battle.sim.turn)
+	check(battle.has_boss() and battle.last_decision != null, "the brain decided for the boss")
+	var brain := battle.brain
+	check(brain.plans_made > 0 and brain.steps_executed > 0, "plans were made and executed: %s" % brain.stats_summary())
+	var sources := {}
+	for d in brain.history:
+		sources[d.source] = true
+	check(sources.has("plan"), "plan steps were played (sources: %s)" % str(sources.keys()))
+	check(not battle.overlay._plan_info.is_empty(), "overlay shows the planning panel")
+	print("      winner: %s, %s" % ["player" if battle.victory else "npc/draw", brain.stats_summary()])
+	battle.queue_free()
+	await get_tree().process_frame
+
+
+## Plays a whole fight through the real scene: the player side is an autopilot
+## that clicks the first hero / skill / target. Returns the finished battle.
+func _autopilot_battle(enemy_party: Array[String]) -> Battle:
 	Game.player_party = ["ninja", "flame", "knight", "monk"]
-	Game.pending_enemy_party = ["evil_bamboo", "bear"]
+	Game.pending_enemy_party = enemy_party
 	Game.party_hp = {}
 	Game.ai_config["depth"] = 3
 	var battle: Battle = load("res://battle.tscn").instantiate()
@@ -380,13 +564,9 @@ func _test_full_battle() -> void:
 				Battle.PlayerTurn.Stage.PICK_TARGET:
 					if not selectable.is_empty():
 						battle.unit_clicked.emit(selectable[0])
-	check(battle.battle_over, "battle reaches an end state (turns: %d)" % battle.sim.turn)
-	check(battle.state_machine.is_in(&"Finished"), "state machine ends in Finished")
-	check(battle.last_search != null and battle.last_search.root_scores.size() > 0, "NPC decisions were recorded for the overlay")
-	print("      winner: %s" % ["player" if battle.victory else "npc/draw"])
-	battle.queue_free()
-	await get_tree().process_frame
-	
+	return battle
+
+
 func _test_csp() -> void:
 	print("[CSP]")
 	var s := _sim()

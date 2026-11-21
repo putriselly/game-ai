@@ -7,6 +7,8 @@ extends Sprite2D
 ## [br]- Characters have a [code]SeparateAnim[/code] folder with Idle / Walk /
 ##   Attack / Dead sheets.
 ## [br]- Monsters only have a 4x4 [code]SpriteSheet.png[/code] (walk cycle).
+## [br]- Bosses have horizontal strips (Idle / Walk / Attack / Hit.png, square
+##   frames, no facing); they are flipped to face left.
 ## [br]In every sheet the column is the facing direction (down, up, left, right)
 ## and the row is the frame of the animation.
 
@@ -58,6 +60,15 @@ func _load_sheets() -> void:
 			_sheets[ANIM_IDLE]["single_frame"] = true
 		_add_sheet(ANIM_ATTACK, sep.path_join("Attack.png"), false, true)
 		_add_sheet(ANIM_DEAD, sep.path_join("Dead.png"), false, false)
+	elif ResourceLoader.exists(sprite_folder.path_join("Idle.png")):
+		# Boss: horizontal strips of square frames, not directional.
+		_add_strip(ANIM_IDLE, sprite_folder.path_join("Idle.png"), true)
+		_add_strip(ANIM_WALK, sprite_folder.path_join("Walk.png"), true)
+		_add_strip(ANIM_ATTACK, sprite_folder.path_join("Attack.png"), false)
+		_add_strip(ANIM_DEAD, sprite_folder.path_join("Hit.png"), false)
+		for anim in [ANIM_WALK, ANIM_ATTACK, ANIM_DEAD]:
+			if not _sheets.has(anim):
+				_sheets[anim] = _sheets[ANIM_IDLE].duplicate()
 	else:
 		# Monster: one 4x4 sheet, columns = direction, rows = walk frames.
 		var sheet := sprite_folder.path_join("SpriteSheet.png")
@@ -82,6 +93,25 @@ func _add_sheet(anim: StringName, path: String, loop: bool, directional: bool) -
 		"texture": tex, "hframes": cols, "vframes": rows,
 		"loop": loop, "directional": directional and cols >= 4, "single_frame": false,
 	}
+
+
+func _add_strip(anim: StringName, path: String, loop: bool) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var tex: Texture2D = load(path)
+	var size := maxi(1, tex.get_height())
+	_sheets[anim] = {
+		"texture": tex, "hframes": maxi(1, int(tex.get_width() / size)), "vframes": 1,
+		"loop": loop, "directional": false, "single_frame": false,
+	}
+
+
+## Frame height of the current sheet in pixels (16 for the small actors).
+func frame_height() -> int:
+	if not _sheets.has(current_animation):
+		return 16
+	var sheet: Dictionary = _sheets[current_animation]
+	return int(sheet["texture"].get_height() / sheet["vframes"])
 
 
 ## Starts an animation. Looping animations restart only if they are not
@@ -139,5 +169,8 @@ func _apply_frame() -> void:
 	if sheet["directional"]:
 		var row := 0 if sheet["single_frame"] else _frame_index
 		frame = row * hframes + int(direction)
+		flip_h = false
 	else:
 		frame = _frame_index
+		# Strips have no facing: mirror them to look left.
+		flip_h = direction == Dir.LEFT

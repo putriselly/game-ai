@@ -10,6 +10,7 @@ extends RefCounted
 ## toughest one so the burn has time to pay off.
 const CHAR := "res://assets/Actor/Character/"
 const MONSTER := "res://assets/Actor/Monster/"
+const BOSS := "res://assets/Actor/Boss/"
 
 const TM := SkillData.TargetMode
 
@@ -24,7 +25,9 @@ const ELEMENT_BY_ID = {
 	"bear": "Electric",
 	"bomber": "Fire",
 	"evil_fire_mage": "Fire",
-	"evil_thunder_mage": "Electric"
+	"evil_thunder_mage": "Electric",
+
+	"giant_bamboo": "Wind"
 }
 
 static func get_unit(id: String) -> UnitData:
@@ -114,13 +117,47 @@ static func get_unit(id: String) -> UnitData:
 					"description": "Deal 10 damage and stun the target for 2 turns.",
 					"target_mode": TM.ENEMY, "power": 10, "stun_turns": 2, "is_ultimate": true}),
 			], BattleSim.TargetRule.THREAT)
+		# ---------------- Boss ----------------
+		# Skills carry PRECONDITIONS and EFFECTS (flags), so the boss has to
+		# chain actions: Sap Surge -> Bamboo Spear / Thorn Storm. This is the
+		# structure the automated planner (Tahap 4) reasons about.
+		"giant_bamboo":
+			var boss := _unit("giant_bamboo", "Giant Bamboo", 120, BOSS + "GiantBamboo", [
+				_skill({"id": "root_slam", "display_name": "Root Slam",
+					"description": "Deal 6 damage to the target.",
+					"target_mode": TM.ENEMY, "power": 6}),
+				_skill({"id": "sap_surge", "display_name": "Sap Surge",
+					"description": "Become enraged: the next Bamboo Spear or Thorn Storm is empowered.",
+					"target_mode": TM.SELF, "grants": ["enraged"], "forbids": ["enraged"]}),
+				_skill({"id": "bamboo_spear", "display_name": "Bamboo Spear",
+					"description": "Deal 10 damage, or 24 while enraged (ends the rage).",
+					"target_mode": TM.ENEMY, "power": 10, "power_if_user_enraged": 24,
+					"consumes": ["enraged"]}),
+				_skill({"id": "thorn_storm", "display_name": "Thorn Storm",
+					"description": "Phase 2, while enraged: deal 6 damage and burn every hero for 2 turns (ends the rage).",
+					"target_mode": TM.ALL_ENEMIES, "power": 6, "burn_turns": 2,
+					"requires": ["enraged", "phase2"], "consumes": ["enraged"]}),
+				_skill({"id": "harden_bark", "display_name": "Harden Bark",
+					"description": "Gain 15 shield (only while unshielded).",
+					"target_mode": TM.SELF, "shield": 15, "forbids": ["shielded"]}),
+				_skill({"id": "regrow", "display_name": "Regrow",
+					"description": "Below 50% HP, once per battle: restore 25 HP (uses a potion).",
+					"target_mode": TM.SELF, "heal": 25, "once_per_battle": true,
+					"only_if_user_hp_below": 0.5}),
+				_skill({"id": "bamboo_fury", "display_name": "Bamboo Fury",
+					"description": "Ultimate: deal 8 damage to every hero.",
+					"target_mode": TM.ALL_ENEMIES, "power": 8, "is_ultimate": true}),
+			], BattleSim.TargetRule.THREAT)
+			boss.is_boss = true
+			return boss
 	push_error("Roster: unknown unit id '%s'" % id)
 	return null
 
 
 static func all_ids() -> Array[String]:
 	return ["ninja", "flame", "knight", "monk",
-		"evil_bamboo", "bear", "bomber", "evil_fire_mage", "evil_thunder_mage"]
+		"evil_bamboo", "bear", "bomber", "evil_fire_mage", "evil_thunder_mage",
+		"giant_bamboo"]
 
 
 static func _unit(id: String, display_name: String, max_hp: int, folder: String,

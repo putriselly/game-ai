@@ -23,6 +23,9 @@ var ui: BattleUI
 var overlay: DebugOverlay
 var ai: MinimaxAI
 var csp := NpcCSP.new()
+## Tahap 4: plan/execute/monitor/replan brain used when the NPC side has a boss.
+var brain: BossBrain
+var last_decision: BossBrain.Decision
 var state_machine: StateMachine
 var round_number := 0
 var battle_over := false
@@ -87,8 +90,35 @@ func make_ai() -> MinimaxAI:
 	return new_ai
 
 
+## Builds the boss brain (planner + minimax fallback) from Game.ai_config.
+func make_brain() -> BossBrain:
+	var cfg: Dictionary = Game.ai_config
+	var new_brain := BossBrain.new()
+	new_brain.mode = cfg["boss_brain"]
+	new_brain.planner.heuristic = cfg["plan_heuristic"]
+	new_brain.planner.scoring = cfg["plan_scoring"]
+	new_brain.planner.max_plan_length = cfg["max_plan_length"]
+	new_brain.planner.eval_name = cfg["eval"]
+	new_brain.planner.personality = cfg["personality"]
+	new_brain.fallback = make_ai()
+	return new_brain
+
+
+## True when a boss fights on the NPC side (the brain decides instead of CSP + minimax).
+func has_boss() -> bool:
+	if sim == null:
+		return false
+	for u in sim.side_units(BattleSim.NPC):
+		if u.data.is_boss:
+			return true
+	return false
+
+
 func apply_ai_config() -> void:
 	ai = make_ai()
+	# Rebuilding the brain drops its current plan and counters; settings are
+	# normally changed between battles or from the overlay while debugging.
+	brain = make_brain()
 	if sim:
 		sim.hit_chance = Game.ai_config["hit_chance"]
 		sim.ultimate_mode = Game.ai_config["ultimate_mode"]
@@ -211,6 +241,14 @@ func _present(events: Array[Dictionary]) -> void:
 				var target := view_of(e["target"])
 				target.spawn_text("Resist", Color(0.8, 0.8, 0.8))
 				ui.log_line("  %s resists the stun." % target.state.display_name())
+			"status":
+				var target := view_of(e["unit"])
+				target.flash(Color(1, 0.8, 0.4))
+				target.spawn_text(str(e["flag"]).capitalize(), Color(1, 0.8, 0.4))
+				ui.log_line("  %s is now %s." % [target.state.display_name(), e["flag"]])
+			"status_lost":
+				var target := view_of(e["unit"])
+				ui.log_line("  %s is no longer %s." % [target.state.display_name(), e["flag"]])
 	refresh_views()
 
 
@@ -336,6 +374,9 @@ class NpcTurn extends State:
 		await b.wait(0.3)
 		if b.battle_over:
 			return
+		if b.has_boss() and b.brain.mode != BossBrain.Mode.MINIMAX:
+			await _run_boss(b)
+			return
 		var domains: Dictionary = NpcCSP.build_domains(b.sim)
 		var csp_info: Array[String] = []
 		csp_info.append("Variables: %d" % domains.size())
@@ -382,6 +423,21 @@ class NpcTurn extends State:
 		b.ui.log_line("NPC picks %s (score %.1f, %d nodes, %.0f ms)." % [
 			result.action.describe(b.sim), score, result.nodes, result.time_ms])
 		await b.perform(result.action)
+		if b.state_machine.current_state == self and not b.check_battle_end():
+			go_to(&"PlayerTurn")
+
+
+	## Boss turn: the brain plays the next plan step, or replans / falls back.
+	func _run_boss(b: Battle) -> void:
+		var decision := b.brain.decide(b.sim)
+		b.last_decision = decision
+		if decision.search != null:
+			b.last_search = decision.search
+		b.overlay.show_plan(decision, b.sim, b.brain)
+		if decision.replanned and decision.plan != null and decision.plan.found:
+			b.ui.log_line("Boss plans: %s." % decision.plan.describe(PlanModel.from_sim(b.sim)))
+		b.ui.log_line("Boss %s (%.0f ms)." % [decision.describe(b.sim), decision.time_ms])
+		await b.perform(decision.action)
 		if b.state_machine.current_state == self and not b.check_battle_end():
 			go_to(&"PlayerTurn")
 

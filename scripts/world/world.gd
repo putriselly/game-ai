@@ -23,3 +23,8 @@ func _ready() -> void:
 	for enemy in get_tree().get_nodes_in_group("world_enemy"):
 		if Game.is_defeated(enemy.encounter_id):
 			enemy.queue_free()
+		elif not enemy.is_unlocked():
+			# Boss gate: stays in the scene (so tests can see it) but inert.
+			enemy.remove_from_group("world_enemy")
+			enemy.visible = false
+			enemy.process_mode = Node.PROCESS_MODE_DISABLED

@@ -62,6 +62,9 @@ func _run() -> void:
 	check(pf != null and pf.blocked_count() > 0, "pathfinder built from tilemap (%d blocked cells)" % (pf.blocked_count() if pf else -1))
 	var enemies := get_tree().get_nodes_in_group("world_enemy")
 	check(enemies.size() == 3, "3 encounters on the map")
+	var king: Node2D = world.get_node_or_null("Enemies/BambooKing")
+	check(king != null and not king.visible and not king.is_in_group("world_enemy"), "boss encounter is hidden until the other three are beaten")
+	check(king != null and pf.is_walkable(Character.world_to_cell(king.global_position)), "boss stands on a walkable cell")
 	var player := get_tree().get_first_node_in_group("player") as Node2D
 	var bamboo: Node2D = world.get_node("Enemies/BambooPatrol")
 	# Stand near the bamboo so it chases us, then wait for the battle.

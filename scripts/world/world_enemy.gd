@@ -9,6 +9,8 @@ extends Character
 @export var encounter_id: String = "encounter_1"
 ## Unit ids (see [Roster]) that the player fights when touching this enemy.
 @export var enemy_party: Array[String] = ["evil_bamboo", "bear"]
+## Encounter ids that must be beaten before this enemy appears (boss gate).
+@export var requires_defeated: Array[String] = []
 ## Distance (px) at which the enemy notices the player.
 @export var detect_radius: float = 80.0
 ## Distance (px) at which a chasing enemy gives up.
@@ -17,6 +19,14 @@ extends Character
 @export var wander_range: int = 4
 
 var _battle_started := false
+
+
+## False while a required encounter is still standing.
+func is_unlocked() -> bool:
+	for id in requires_defeated:
+		if not Game.is_defeated(id):
+			return false
+	return true
 
 
 func _ready() -> void:

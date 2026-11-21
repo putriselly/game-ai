@@ -12,6 +12,13 @@ var ult: int = 0
 var burn: int = 0     # remaining burn turns
 var stun: int = 0     # remaining stunned turns
 var stun_immune: int = 0  # turns during which a new stun is resisted
+## Named statuses granted/consumed by skills ("enraged", "phase2",
+## "used_regrow", ...). Query through [method has_flag], which also answers
+## the derived flags listed there.
+var flags: Dictionary = {}
+
+## HP ratio below which a unit counts as "low_hp" (and a boss enters phase 2).
+const LOW_HP_RATIO := 0.5
 
 
 static func create(unit_data: UnitData, unit_side: int, unit_index: int, start_hp: int = -1) -> UnitState:
@@ -34,6 +41,7 @@ func clone() -> UnitState:
 	u.burn = burn
 	u.stun = stun
 	u.stun_immune = stun_immune
+	u.flags = flags.duplicate()
 	return u
 
 
@@ -59,3 +67,37 @@ func ult_ready() -> bool:
 
 func display_name() -> String:
 	return data.display_name
+
+
+## Status predicate used by skill preconditions and by the planner. Stored
+## flags plus derived ones: alive, shielded, burning, stunned, ult_ready, low_hp.
+func has_flag(flag: String) -> bool:
+	match flag:
+		"alive":
+			return is_alive()
+		"shielded":
+			return shield > 0
+		"burning":
+			return is_burning()
+		"stunned":
+			return is_stunned()
+		"ult_ready":
+			return ult_ready()
+		"low_hp":
+			return hp_ratio() < LOW_HP_RATIO
+	return flags.has(flag)
+
+
+func set_flag(flag: String) -> void:
+	flags[flag] = true
+
+
+func clear_flag(flag: String) -> void:
+	flags.erase(flag)
+
+
+## Stored flags, sorted (for describe() and the overlay).
+func flag_names() -> Array:
+	var names := flags.keys()
+	names.sort()
+	return names

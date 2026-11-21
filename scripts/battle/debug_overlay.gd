@@ -16,6 +16,7 @@ var _decisions := 0
 var _history: Array[String] = []
 var _csp_info: Array[String] = []
 var _local_info: Array[String] = []
+var _plan_info: Array[String] = []
 
 
 func setup(battle_node: Battle) -> void:
@@ -27,7 +28,7 @@ func _ready() -> void:
 	_root = PanelContainer.new()
 	_root.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	_root.offset_left = -470
-	_root.offset_bottom = 520
+	_root.offset_bottom = 640
 	_root.visible = false
 	add_child(_root)
 
@@ -58,6 +59,10 @@ func _ready() -> void:
 	_add_spin(grid, "Hit chance", "hit_chance", 0.3, 1.0, 0.05)
 	_add_option(grid, "Target rule", "target_rule", ["weakest", "threat", "toughest", "per_unit"])
 	_add_check(grid, "Full targeting", "full_targeting")
+	_add_option(grid, "Boss brain", "boss_brain", BossBrain.MODE_NAMES)
+	_add_option(grid, "Plan heuristic", "plan_heuristic", BossPlanner.HEURISTIC_NAMES)
+	_add_option(grid, "Plan scoring", "plan_scoring", BossPlanner.SCORING_NAMES)
+	_add_spin(grid, "Max plan len", "max_plan_length", 1, 8, 1)
 
 	var compare := Button.new()
 	compare.text = "Compare algorithms on current state"
@@ -155,8 +160,51 @@ func show_result(result: MinimaxAI.SearchResult, sim: BattleSim) -> void:
 	_render()
 
 
+## Called by the battle after every boss decision (Tahap 4).
+func show_plan(decision: BossBrain.Decision, sim: BattleSim, brain: BossBrain) -> void:
+	var lines: Array[String] = []
+	var planner := brain.planner
+	lines.append("[b]Boss brain: %s[/b]  (heuristic %s, scoring %s, max len %d)" % [
+		brain.mode_name(), planner.heuristic_name(), BossPlanner.SCORING_NAMES[planner.scoring], planner.max_plan_length])
+	lines.append("Decision %d: %s  %.1f ms" % [brain.decisions, decision.describe(sim), decision.time_ms])
+	var plan := decision.plan
+	if plan != null and plan.found:
+		var state := PlanModel.from_sim(sim)
+		var parts: Array[String] = []
+		for i in range(plan.steps.size()):
+			var name := plan.steps[i].describe(state)
+			if i < decision.step_index:
+				parts.append("[color=gray]%s[/color]" % name)
+			elif i == decision.step_index:
+				parts.append("[color=yellow]> %s[/color]" % name)
+			else:
+				parts.append(name)
+		lines.append("Goal [b]%s[/b] (score %.1f): %s" % [plan.goal.name, plan.score, " -> ".join(parts)])
+	if decision.replanned:
+		lines.append("[color=orange]Replanned: %s[/color]" % decision.reason)
+	if plan != null and not plan.candidates.is_empty():
+		lines.append("Goals considered:")
+		for c in plan.candidates:
+			var goal: BossPlanner.Goal = c["goal"]
+			if c["found"]:
+				lines.append("   %s%s: %d steps, score %.1f, %d expanded" % [
+					"> " if plan.found and goal == plan.goal else "", goal.name, c["length"], c["score"], c["expanded"]])
+			else:
+				lines.append("   %s: %s (%d expanded)" % [goal.name, c["note"], c["expanded"]])
+		lines.append("Search: %d goals, %d expanded, %d generated, %.1f ms" % [
+			plan.goals_tried, plan.total_expanded, plan.total_generated, plan.total_time_ms])
+	lines.append("[i]%s[/i]" % brain.stats_summary())
+	_plan_info = lines
+	if decision.search != null:
+		show_result(decision.search, sim)
+	else:
+		_render()
+
+
 func _render() -> void:
 	var text := "\n".join(_history)
+	if not _plan_info.is_empty():
+		text = "[b]PLANNING[/b]\n" + "\n".join(_plan_info) + ("\n\n" + text if not _history.is_empty() else "")
 	if not _csp_info.is_empty():
 		text += "\n\n[b]CSP[/b]\n" + "\n".join(_csp_info)
 	if not _local_info.is_empty():

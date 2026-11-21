@@ -205,13 +205,42 @@ func candidate_targets(user: UnitState, skill: SkillData) -> Array[int]:
 func usable_skills(u: UnitState) -> Array[SkillData]:
 	var out: Array[SkillData] = []
 	var ultimate := u.data.ultimate()
-	if u.ult_ready() and ultimate != null:
+	if u.ult_ready() and ultimate != null and skill_available(u, ultimate):
 		out.append(ultimate)
 		if ultimate_mode == UltimateMode.AUTO:
 			return out
 	for s in u.data.basic_skills():
-		out.append(s)
+		if skill_available(u, s):
+			out.append(s)
 	return out
+
+
+## PRECONDITIONS of [param skill] on its user: required/forbidden flags, the
+## once-per-battle lock and the low-HP gate. (Potions are checked by
+## [method legal_actions] because they belong to the side, not the unit.)
+func skill_available(u: UnitState, skill: SkillData) -> bool:
+	for flag in skill.requires:
+		if not u.has_flag(flag):
+			return false
+	for flag in skill.forbids:
+		if u.has_flag(flag):
+			return false
+	if skill.once_per_battle and u.has_flag(skill.used_flag()):
+		return false
+	if skill.only_if_user_hp_below > 0.0 and u.hp_ratio() >= skill.only_if_user_hp_below:
+		return false
+	return true
+
+
+## Damage [param skill] deals before shields and element multipliers, given
+## the user's rage and the target's burn.
+func base_damage(user: UnitState, skill: SkillData, target: UnitState) -> int:
+	var damage := skill.power
+	if skill.power_if_user_enraged > 0 and user.has_flag("enraged"):
+		damage = skill.power_if_user_enraged
+	if skill.power_if_target_burning > 0 and target.is_burning():
+		damage = skill.power_if_target_burning
+	return damage
 
 
 ## Rule-based targeting used by the search (and as the AI's own choice):
@@ -267,9 +296,8 @@ func _better_attack_target(candidate: UnitState, current: UnitState, skill: Skil
 	var rule := rule_for(user)
 	if rule != TargetRule.WEAKEST:
 		# A kill now beats any preference.
-		var damage := maxi(skill.power, skill.power_if_target_burning if candidate.is_burning() else 0)
-		var can_kill_candidate := candidate.hp + candidate.shield <= damage
-		var can_kill_current := current.hp + current.shield <= damage
+		var can_kill_candidate := candidate.hp + candidate.shield <= base_damage(user, skill, candidate)
+		var can_kill_current := current.hp + current.shield <= base_damage(user, skill, current)
 		if can_kill_candidate != can_kill_current:
 			return can_kill_candidate
 	match rule:
@@ -306,7 +334,7 @@ func threat_of(u: UnitState) -> float:
 
 func _skill_value(skill: SkillData, user: UnitState, foes: int, allies: int) -> float:
 	var value := 0.0
-	value += maxf(skill.power, skill.power_if_target_burning * 0.5)
+	value += maxf(skill.power, maxf(skill.power_if_target_burning, skill.power_if_user_enraged) * 0.5)
 	value += skill.burn_turns * BURN_DAMAGE
 	value += skill.heal * 0.8 + skill.shield * 0.8
 	if skill.stun_turns > 0 and (skill.stun_only_if_user_hp_below <= 0.0 or user.hp_ratio() < skill.stun_only_if_user_hp_below):
@@ -363,9 +391,7 @@ func apply_skill(user: UnitState, skill: SkillData, targets: Array[UnitState], h
 	for target in targets:
 		if not target.is_alive():
 			continue
-		var damage := skill.power
-		if skill.power_if_target_burning > 0 and target.is_burning():
-			damage = skill.power_if_target_burning	
+		var damage := base_damage(user, skill, target)
 		# Menghitung multiplier berdasarkan elemen penyerang dan target
 		var status : Variant = ELEMENT_KB.get_element_status(user.data.element, target.data.element)
 		if status == ELEMENT_KB.STRENGTH:
@@ -405,12 +431,25 @@ func apply_skill(user: UnitState, skill: SkillData, targets: Array[UnitState], h
 			elif allowed:
 				target.stun = maxi(target.stun, skill.stun_turns)
 				events.append({"type": "stun", "unit": user.index, "target": target.index, "turns": target.stun})
+	# EFFECTS on the user: spend and grant status flags, lock once-per-battle.
+	for flag in skill.consumes:
+		if user.has_flag(flag):
+			user.clear_flag(flag)
+			events.append({"type": "status_lost", "unit": user.index, "flag": flag})
+	for flag in skill.grants:
+		if not user.has_flag(flag):
+			events.append({"type": "status", "unit": user.index, "flag": flag})
+		user.set_flag(flag)
+	if skill.once_per_battle:
+		user.set_flag(skill.used_flag())
 	if hits > 0 and not skill.is_ultimate:
 		user.ult = mini(user.ult + ULT_PER_HIT, ULT_MAX)
 	return events
 
 
-## Start of [param side]'s turn: burning units take damage.
+## Start of [param side]'s turn: burning units take damage, and a boss that
+## has dropped below [constant UnitState.LOW_HP_RATIO] enters phase 2 (the
+## flag is permanent and unlocks its phase-2 skills).
 func begin_turn(side: int) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	for u in alive_units(side):
@@ -423,6 +462,10 @@ func begin_turn(side: int) -> Array[Dictionary]:
 				u.burn = 0
 				u.stun = 0
 				events.append({"type": "death", "unit": u.index})
+	for u in alive_units(side):
+		if u.data.is_boss and not u.has_flag("phase2") and u.has_flag("low_hp"):
+			u.set_flag("phase2")
+			events.append({"type": "status", "unit": u.index, "flag": "phase2"})
 	return events
 
 
@@ -451,6 +494,8 @@ func describe() -> String:
 			tags += " stun%d" % u.stun
 		if u.stun_immune > 0:
 			tags += " imm"
+		for flag in u.flag_names():
+			tags += " " + flag
 		parts.append("%s%s(%d%s ult%d)" % ["P" if u.side == PLAYER else "N", u.display_name(), u.hp, tags, u.ult])
 	return "turn %d, %s to move, potions %d/%d: %s" % [turn, "player" if side_to_move == PLAYER else "npc",
 		potions[PLAYER], potions[NPC], " ".join(parts)]

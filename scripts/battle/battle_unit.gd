@@ -20,6 +20,9 @@ var _status_label: Label
 var _highlight := false
 var _selectable := false
 var _dead_shown := false
+## Half the sprite height on screen; labels and bars hang off it so the 62px
+## boss strips get the same layout as the 16px actors.
+var _half := 16.0
 
 
 func setup(unit_state: UnitState, pos: Vector2) -> void:
@@ -37,15 +40,17 @@ func _ready() -> void:
 	sprite = CharacterSprite.new()
 	sprite.name = "Sprite"
 	sprite.sprite_folder = state.data.sprite_folder
-	sprite.scale = Vector2.ONE * SPRITE_SCALE
+	var sprite_scale := 1.0 if state.data.is_boss else SPRITE_SCALE
+	sprite.scale = Vector2.ONE * sprite_scale
 	add_child(sprite)
 	sprite.direction = CharacterSprite.Dir.RIGHT if is_player_side() else CharacterSprite.Dir.LEFT
+	_half = sprite.frame_height() * sprite_scale / 2.0
 
 	var area := Area2D.new()
 	area.name = "ClickArea"
 	var shape := CollisionShape2D.new()
 	var rect := RectangleShape2D.new()
-	rect.size = Vector2(20, 24) * SPRITE_SCALE
+	rect.size = Vector2(_half * 1.25, _half * 1.5) * 2.0
 	shape.shape = rect
 	area.add_child(shape)
 	area.input_event.connect(_on_area_input)
@@ -53,8 +58,8 @@ func _ready() -> void:
 	area.mouse_exited.connect(func(): _highlight = false; queue_redraw())
 	add_child(area)
 
-	_name_label = _make_label(state.data.display_name, Vector2(-30, -27), 7)
-	_status_label = _make_label("", Vector2(-30, -34), 6)
+	_name_label = _make_label(state.data.display_name, Vector2(-30, -(_half + 11)), 7)
+	_status_label = _make_label("", Vector2(-30, -(_half + 18)), 6)
 	_status_label.modulate = Color(1.0, 0.6, 0.2)
 	refresh()
 
@@ -80,6 +85,9 @@ func refresh() -> void:
 		parts.append("Burn %d" % state.burn)
 	if state.stun > 0:
 		parts.append("Stun %d" % state.stun)
+	for flag in state.flag_names():
+		if not str(flag).begins_with("used_"):
+			parts.append(str(flag).capitalize())
 	_status_label.text = " ".join(parts)
 	if not state.is_alive() and not _dead_shown:
 		_dead_shown = true
@@ -144,7 +152,7 @@ func flash(color: Color) -> void:
 func spawn_text(text: String, color: Color) -> void:
 	var label := Label.new()
 	label.text = text
-	label.position = Vector2(-30, -22)
+	label.position = Vector2(-30, -(_half + 6))
 	label.size = Vector2(60, 10) * TEXT_SCALE
 	label.scale = Vector2.ONE / TEXT_SCALE
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -154,7 +162,7 @@ func spawn_text(text: String, color: Color) -> void:
 	label.add_theme_constant_override("outline_size", 2)
 	add_child(label)
 	var tween := create_tween()
-	tween.tween_property(label, "position:y", -40.0, 0.7)
+	tween.tween_property(label, "position:y", -(_half + 24), 0.7)
 	tween.parallel().tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.3)
 	tween.tween_callback(label.queue_free)
 
@@ -164,12 +172,12 @@ func spawn_text(text: String, color: Color) -> void:
 func _draw() -> void:
 	if state == null:
 		return
-	var w := 32.0
+	var w := maxf(32.0, _half * 1.6)
 	var x := -w / 2.0
-	var y := 18.0
+	var y := _half + 2.0
 	if _selectable:
 		var ring_color := Color(1, 1, 0.3, 1.0 if _highlight else 0.6)
-		draw_arc(Vector2(0, 12), 19.0, 0.0, TAU, 24, ring_color, 1.5)
+		draw_arc(Vector2(0, _half - 4.0), _half + 3.0, 0.0, TAU, 24, ring_color, 1.5)
 	draw_rect(Rect2(x - 1, y - 1, w + 2, 6), Color.BLACK)
 	draw_rect(Rect2(x, y, w, 4), Color(0.25, 0.1, 0.1))
 	var hp_color := Color(0.3, 0.85, 0.3) if is_player_side() else Color(0.9, 0.3, 0.3)

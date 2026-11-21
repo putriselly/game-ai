@@ -30,6 +30,11 @@ var ai_config: Dictionary = {
 	"ultimate_mode": BattleSim.UltimateMode.AUTO,
 	"full_targeting": false,
 	"target_rule": BattleSim.TargetRule.PER_UNIT,
+	# Tahap 4: how a boss decides (see BossBrain / BossPlanner).
+	"boss_brain": BossBrain.Mode.PLANNER,
+	"plan_heuristic": BossPlanner.Heuristic.DAMAGE,
+	"plan_scoring": BossPlanner.Scoring.GAIN_RATE,
+	"max_plan_length": 4,
 }
 
 var saved_player_position: Vector2 = Vector2.ZERO
