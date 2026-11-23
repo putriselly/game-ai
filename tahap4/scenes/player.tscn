@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/world/player.gd" id="1_player"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(12, 10)
+
+[node name="Player" type="CharacterBody2D"]
+script = ExtResource("1_player")
+display_name = "Ninja"
+sprite_folder = "res://assets/Actor/Character/NinjaGreen"
+
+[node name="Collision" type="CollisionShape2D" parent="."]
+position = Vector2(0, 4)
+shape = SubResource("RectangleShape2D_body")
+
+[node name="Camera" type="Camera2D" parent="."]
+zoom = Vector2(3, 3)
+limit_left = 0
+limit_top = 0
